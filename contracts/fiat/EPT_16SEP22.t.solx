@@ -1,0 +1,673 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.4;
+
+import {DSTest} from "ds-test/test.sol";
+import {IERC20} from "openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {PRBProxyFactory, PRBProxy} from "proxy/contracts/PRBProxyFactory.sol";
+import {PRBProxyRegistry} from "proxy/contracts/PRBProxyRegistry.sol";
+
+import "./Deploy.sol";
+
+interface ICCP {
+    function getPoolId() external view returns (bytes32);
+    function getVault() external view returns (address);
+}
+
+contract Test_EPT_16SEP22 is DSTest, TestDeploy {
+
+    // Params
+
+    address public usdc = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+    address public dai = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+    address public lusd = address(0x5f98805A4E8be255a32880FDeC7F6728C6568bA0);
+    address public lusd3CRV = address(0xEd279fDD11cA84bEef15AF5D39BB4d4bEE23F0cA);
+    address public threeCRV = address(0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490);
+    address public threeCRVPool = address(0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7);
+    
+    address public chainlinkOracle_USDC = address(0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6);
+    address public chainlinkOracle_DAI = address(0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9);
+    address public chainlinkOracle_LUSD = address(0x3D7aE7E594f2f2091Ad8798313450130d0Aba3a0);
+    address public chainlinkOracle_USDT = address(0x3E7d1eAB13ad0104d2750B8863b489D65364e32D);
+    
+    uint256 public elementDiscountRate = 3022265993;
+    uint256 public oracleUpdateWindow = 1 * 3600;
+    uint256 public minPercentageDeltaValue = 25;
+
+    address public trancheFactory_ePyvUSDC_16SEP22 = address(0x62F161BF3692E4015BefB05A03a94A40f520d1c0);
+    address public wrappedPosition_ePyvUSDC_16SEP22 = address(0x57A170cEC0c9Daa701d918d60809080C4Ba3C570);
+    address public curveConvergentPool_ePyvUSDC_16SEP22 = address(0x56df5ef1A0A86c2A5Dd9cC001Aa8152545BDbdeC);
+    address public pToken_ePyvUSDC_16SEP22 = address(0xCFe60a1535ecc5B0bc628dC97111C8bb01637911);
+
+    address public trancheFactory_ePyvDAI_16SEP22 = address(0x62F161BF3692E4015BefB05A03a94A40f520d1c0);
+    address public wrappedPosition_ePyvDAI_16SEP22 = address(0x3A285cbE492cB172b78E76Cf4f15cb6Fe9f162E4);
+    address public curveConvergentPool_ePyvDAI_16SEP22 = address(0x8fFD1dc7C3eF65f833CF84dbCd15b6Ad7f9C54EC);
+    address public pToken_ePyvDAI_16SEP22 = address(0xCCE00da653eB50133455D4075fE8BcA36750492c);
+
+    address public trancheFactory_ePyvLUSD3CRV_16SEP22 = address(0x62F161BF3692E4015BefB05A03a94A40f520d1c0);
+    address public wrappedPosition_ePyvLUSD3CRV_16SEP22 = address(0x55Ae4214ceAA407928d33AEd0A005829d9B68Ad3);
+    address public curveConvergentPool_ePyvLUSD3CRV_16SEP22 = address(0x489eeDB33F82574AfEABb3F4e156FBf662308AdA);
+    address public pToken_ePyvLUSD3CRV_16SEP22 = address(0x83d392a7be901892a8c861c96Ea430B8d9c2BD51);
+
+    // Contracts
+
+    PRBProxy public proxy;
+    NoLossCollateralAuctionActions public noLossCollateralAuctionActions;
+    VaultEPTActions public vaultEPTActions;
+
+    StaticRelayer public discountRateRelayer_ePvyUSDC;
+    Relayer public spotRelayer_USDC;
+    StaticRelayer public discountRateRelayer_ePvyDAI;
+    Relayer public spotRelayer_DAI;
+    StaticRelayer public discountRateRelayer_ePvyLUSD3CRV;
+    Relayer public spotRelayer_LUSD3CRV;
+
+    address public vaultEPT_ePyvUSDC_impl;
+    VaultEPT public vaultEPT_ePyvUSDC_16SEP22;
+
+    address public vaultEPT_ePyvDAI_impl;
+    VaultEPT public vaultEPT_ePyvDAI_16SEP22;
+
+    address public vaultEPT_ePyvLUSD3CRV_impl;
+    VaultEPT public vaultEPT_ePyvLUSD3CRV_16SEP22;
+
+    function _mintUSDC(address to, uint256 amount) internal {
+        // USDC minters
+        hevm.store(usdc, keccak256(abi.encode(address(this), uint256(12))), bytes32(uint256(1)));
+        // USDC minterAllowed
+        hevm.store(
+            usdc,
+            keccak256(abi.encode(address(this), uint256(13))),
+            bytes32(uint256(type(uint256).max))
+        );
+        string memory sig = "mint(address,uint256)";
+        (bool ok, ) = usdc.call(abi.encodeWithSignature(sig, to, amount));
+        assert(ok);
+    }
+
+    function _mintDAI(address to, uint256 amount) internal {
+        hevm.store(
+            dai,
+            keccak256(abi.encode(address(address(this)), uint256(0))),
+            bytes32(uint256(1))
+        );
+        string memory sig = "mint(address,uint256)";
+        (bool ok, ) = dai.call(abi.encodeWithSignature(sig, to, amount));
+        assert(ok);
+    }
+
+    function _mintLUSD3CRV(address to, uint256 amount) internal {
+        hevm.store(
+            lusd,
+            keccak256(abi.encode(address(this), uint256(2))),
+            bytes32(uint256(type(uint128).max))
+        );
+        IERC20(lusd).approve(lusd3CRV, uint256(type(uint128).max));
+        string memory sig = "add_liquidity(uint256[2],uint256,address)";
+        (bool ok, ) = lusd3CRV.call(abi.encodeWithSignature(sig, [amount, 0], block.timestamp, to));
+        assert(ok);
+    }
+
+    function _buyAndDeposit(
+        address underlier,
+        address curveConvergentPool,
+        address pToken,
+        address vault,
+        uint256 collateral,
+        uint256 credit
+    ) internal {
+        uint256 initial = IERC20(underlier).balanceOf(address(this));
+
+        IERC20(underlier).approve(address(proxy), collateral);
+
+        VaultEPTActions.SwapParams memory swapParams = VaultEPTActions.SwapParams(
+            ICCP(curveConvergentPool).getVault(),
+            ICCP(curveConvergentPool).getPoolId(),
+            underlier,
+            pToken,
+            collateral,
+            block.timestamp,
+            collateral
+        );
+        bytes memory data = abi.encodeWithSelector(
+            vaultEPTActions.buyCollateralAndModifyDebt.selector,
+            vault,
+            proxy,
+            address(this),
+            address(this),
+            collateral,
+            int256(credit),
+            swapParams
+        );
+
+        proxy.execute(address(vaultEPTActions), data);
+
+        assertEq(IERC20(underlier).balanceOf(address(this)), initial - collateral);
+        assertEq(fiat.balanceOf(address(this)), credit);
+    }
+
+    function _withdrawAndSell(
+        address underlier,
+        address curveConvergentPool,
+        address pToken,
+        address vault,
+        uint256 collateral,
+        uint256 credit
+    ) internal {
+        uint256 priceImpact = 0.01e18;
+
+        fiat.approve(address(proxy), credit);
+
+        proxy.execute(
+            address(vaultEPTActions),
+            abi.encodeWithSelector(vaultEPTActions.approveFIAT.selector, address(moneta), credit)
+        );
+
+        VaultEPTActions.SwapParams memory swapParams = VaultEPTActions.SwapParams(
+            ICCP(curveConvergentPool).getVault(),
+            ICCP(curveConvergentPool).getPoolId(),
+            pToken,
+            underlier,
+            collateral - collateral * priceImpact / 1e18,
+            block.timestamp,
+            collateral
+        );
+        bytes memory data = abi.encodeWithSelector(
+            vaultEPTActions.sellCollateralAndModifyDebt.selector,
+            vault,
+            proxy,
+            address(this),
+            address(this),
+            collateral,
+            -int256(credit),
+            swapParams
+        );
+
+        proxy.execute(address(vaultEPTActions), data);
+
+        assertGt(IERC20(underlier).balanceOf(address(this)), collateral - collateral * priceImpact / 1e18);
+        assertEq(fiat.balanceOf(address(this)), 0);
+    }
+
+    function _withdrawAndRedeem(
+        address underlier,
+        address pToken,
+        address vault,
+        uint256 collateral,
+        uint256 credit
+    ) internal {
+        hevm.warp(IVault(vault).maturity(0));
+        hevm.roll(block.number + ((IVault(vault).maturity(0) - block.timestamp) / 12));
+
+        publican.collect(vault);
+        (, uint256 rate, , ) = codex.vaults(vault);
+        uint256 interest = (credit * rate / 1e18) - credit;
+        codex.createUnbackedDebt(address(this), address(this), interest);
+        codex.grantDelegate(address(moneta));
+        moneta.exit(address(this), interest);
+
+        fiat.approve(address(proxy), credit + interest);
+
+        proxy.execute(
+            address(vaultEPTActions),
+            abi.encodeWithSelector(vaultEPTActions.approveFIAT.selector, address(moneta), credit + interest)
+        );
+
+        bytes memory data = abi.encodeWithSelector(
+            vaultEPTActions.redeemCollateralAndModifyDebt.selector,
+            vault,
+            pToken,
+            proxy,
+            address(this),
+            address(this),
+            collateral,
+            -int256(credit)
+        );
+
+        proxy.execute(address(vaultEPTActions), data);
+
+        assertGt(IERC20(underlier).balanceOf(address(this)), collateral);
+        assertEq(fiat.balanceOf(address(this)), 0);
+    }
+
+    function _liquidate(
+        address underlier,
+        address vault
+    ) internal {
+        uint256 initialSpot = collybus.spots(underlier);
+        collybus.updateSpot(underlier, 0.5e18);
+        limes.liquidate(vault, 0, address(proxy), address(this));
+        collybus.updateSpot(underlier, initialSpot);
+
+        hevm.warp(block.timestamp + 2.1 hours);
+        (, uint256 price, uint256 collateralToSell, ) = collateralAuction.getStatus(1);
+
+        uint256 delta = (collateralToSell * price / 1e18) - fiat.balanceOf(address(this));
+        uint256 credit = fiat.balanceOf(address(this)) + delta;
+        codex.createUnbackedDebt(address(this), address(this), delta);
+        codex.grantDelegate(address(moneta));
+        moneta.exit(address(this), delta);
+
+        fiat.approve(address(proxy), credit);
+
+        uint256 initialFIAT = fiat.balanceOf(address(this));
+        uint256 initialToken = IERC20(IVault(vault).token()).balanceOf(address(this));
+
+        proxy.execute(
+            address(noLossCollateralAuctionActions),
+            abi.encodeWithSelector(noLossCollateralAuctionActions.approveFIAT.selector, address(moneta), credit)
+        );
+
+        proxy.execute(
+            address(noLossCollateralAuctionActions),
+            abi.encodeWithSelector(
+                noLossCollateralAuctionActions.takeCollateral.selector,
+                vault,
+                0,
+                address(this),
+                1,
+                collateralToSell,
+                price,
+                address(this)
+            )
+        );
+
+        assertEq(fiat.balanceOf(address(this)), initialFIAT - credit);
+        assertEq(
+            IERC20(IVault(vault).token()).balanceOf(address(this)),
+            initialToken + (collateralToSell * IVault(vault).tokenScale() / 1e18)
+        );
+    }
+
+    function deployRelayers() public {
+        RelayerFactory relayerFactory = new RelayerFactory();
+        ChainlinkFactory chainlinkFactory = new ChainlinkFactory();
+        LUSD3CRVFactory lusd3CRVFactory = new LUSD3CRVFactory();
+
+        discountRateRelayer_ePvyUSDC = StaticRelayer(relayerFactory.createStatic(
+            address(deployer.collybus()),
+            IRelayer.RelayerType.DiscountRate,
+            bytes32(uint256(1)),
+            elementDiscountRate
+        ));
+        spotRelayer_USDC = Relayer(chainlinkFactory.create(
+            address(deployer.collybus()),
+            usdc,
+            minPercentageDeltaValue,
+            oracleUpdateWindow,
+            chainlinkOracle_USDC
+        ));
+        discountRateRelayers.push(address(discountRateRelayer_ePvyUSDC));
+        spotRelayers.push(address(spotRelayer_USDC));
+
+        discountRateRelayer_ePvyDAI = StaticRelayer(relayerFactory.createStatic(
+            address(deployer.collybus()),
+            IRelayer.RelayerType.DiscountRate,
+            bytes32(uint256(1)),
+            elementDiscountRate
+        ));
+        spotRelayer_DAI = Relayer(chainlinkFactory.create(
+            address(deployer.collybus()),
+            dai,
+            minPercentageDeltaValue,
+            oracleUpdateWindow,
+            chainlinkOracle_DAI
+        ));
+        discountRateRelayers.push(address(discountRateRelayer_ePvyDAI));
+        spotRelayers.push(address(spotRelayer_DAI));
+
+        discountRateRelayer_ePvyLUSD3CRV = StaticRelayer(relayerFactory.createStatic(
+            address(deployer.collybus()),
+            IRelayer.RelayerType.DiscountRate,
+            bytes32(uint256(1)),
+            elementDiscountRate
+        ));
+        spotRelayer_LUSD3CRV = Relayer(
+            lusd3CRVFactory.create(
+                address(deployer.collybus()),
+                lusd3CRV,
+                minPercentageDeltaValue,
+                oracleUpdateWindow,
+                threeCRVPool,
+                threeCRV,
+                chainlinkOracle_LUSD,
+                chainlinkOracle_USDC,
+                chainlinkOracle_DAI,
+                chainlinkOracle_USDT
+            )
+        );
+        discountRateRelayers.push(address(discountRateRelayer_ePvyLUSD3CRV));
+        spotRelayers.push(address(spotRelayer_LUSD3CRV));
+    }
+
+    function deployVaults() public {
+        VaultFactory vaultFactory = new VaultFactory();
+        
+        {
+            vaultEPT_ePyvUSDC_impl = address(new VaultEPT(address(codex), wrappedPosition_ePyvUSDC_16SEP22, trancheFactory_ePyvUSDC_16SEP22));
+            vaultEPT_ePyvUSDC_16SEP22 = VaultEPT(vaultFactory.createVault(
+                vaultEPT_ePyvUSDC_impl, abi.encode(pToken_ePyvUSDC_16SEP22, address(collybus)))
+            );
+            vaultEPT_ePyvUSDC_16SEP22.allowCaller(vaultEPT_ePyvUSDC_16SEP22.ANY_SIG(), address(vaultGuard));
+            vaultEPT_ePyvUSDC_16SEP22.blockCaller(vaultEPT_ePyvUSDC_16SEP22.ANY_SIG(), address(this));
+            vaultGuard.setVault(
+                address(vaultEPT_ePyvUSDC_16SEP22),
+                address(auctionGuard),
+                bytes32("LinearDecrease"),
+                25000000e18,
+                250e18,
+                1000000000317097919,
+                1.1e18,
+                86400,
+                1.05e18,
+                1.001e18,
+                500000e18
+            );
+        }
+
+        {
+            vaultEPT_ePyvDAI_impl = address(new VaultEPT(address(codex), wrappedPosition_ePyvDAI_16SEP22, trancheFactory_ePyvDAI_16SEP22));
+            vaultEPT_ePyvDAI_16SEP22 = VaultEPT(vaultFactory.createVault(
+                vaultEPT_ePyvDAI_impl, abi.encode(pToken_ePyvDAI_16SEP22, address(collybus)))
+            );
+            vaultEPT_ePyvDAI_16SEP22.allowCaller(vaultEPT_ePyvDAI_16SEP22.ANY_SIG(), address(vaultGuard));
+            vaultEPT_ePyvDAI_16SEP22.blockCaller(vaultEPT_ePyvDAI_16SEP22.ANY_SIG(), address(this));
+            vaultGuard.setVault(
+                address(vaultEPT_ePyvDAI_16SEP22),
+                address(auctionGuard),
+                bytes32("LinearDecrease"),
+                3500000e18,
+                250e18,
+                1000000000317097919,
+                1.1e18,
+                86400,
+                1.05e18,
+                1.001e18,
+                500000e18
+            );
+        }
+
+        {
+            vaultEPT_ePyvLUSD3CRV_impl = address(new VaultEPT(address(codex), wrappedPosition_ePyvLUSD3CRV_16SEP22, trancheFactory_ePyvLUSD3CRV_16SEP22));
+            vaultEPT_ePyvLUSD3CRV_16SEP22 = VaultEPT(vaultFactory.createVault(
+                vaultEPT_ePyvLUSD3CRV_impl, abi.encode(pToken_ePyvLUSD3CRV_16SEP22, address(collybus)))
+            );
+            vaultEPT_ePyvLUSD3CRV_16SEP22.allowCaller(vaultEPT_ePyvLUSD3CRV_16SEP22.ANY_SIG(), address(vaultGuard));
+            vaultEPT_ePyvLUSD3CRV_16SEP22.blockCaller(vaultEPT_ePyvLUSD3CRV_16SEP22.ANY_SIG(), address(this));
+            vaultGuard.setVault(
+                address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+                address(auctionGuard),
+                bytes32("LinearDecrease"),
+                3500000e18,
+                250e18,
+                1000000000317097919,
+                1.1e18,
+                86400,
+                1.05e18,
+                1.001e18,
+                500000e18
+            );
+        }
+
+        // Push rates
+
+        discountRateRelayer_ePvyUSDC.execute();
+        spotRelayer_USDC.execute();
+
+        discountRateRelayer_ePvyDAI.execute();
+        spotRelayer_DAI.execute();
+
+        discountRateRelayer_ePvyLUSD3CRV.execute();
+        spotRelayer_LUSD3CRV.execute();
+    }
+
+    function deployActions() public {
+        PRBProxyFactory proxyFactory = new PRBProxyFactory();
+        PRBProxyRegistry proxyRegistry = new PRBProxyRegistry(proxyFactory);
+        proxy = PRBProxy(proxyRegistry.deployFor(address(this)));
+
+        noLossCollateralAuctionActions = new NoLossCollateralAuctionActions(
+            address(deployer.codex()),
+            address(deployer.moneta()),
+            address(deployer.fiat()),
+            address(deployer.collateralAuction())
+        );
+
+        vaultEPTActions = new VaultEPTActions(
+            address(deployer.codex()),
+            address(deployer.moneta()),
+            address(deployer.fiat()),
+            address(deployer.publican())
+        );
+    }
+
+    function deploy() public {
+        deployDeployer();
+        deployRelayers();
+        deployGuards();
+        deployVaults();
+        deployActions();
+    }
+
+    function test_deploy() public {
+        deploy();
+    }
+
+    function test_ePyvUSDC_buy_sell() public {
+        deploy();
+
+        uint256 collateral = 500_000e6;
+        uint256 credit = 250_000e18;
+        _mintUSDC(address(this), collateral);
+
+        _buyAndDeposit(
+            usdc,
+            curveConvergentPool_ePyvUSDC_16SEP22,
+            pToken_ePyvUSDC_16SEP22,
+            address(vaultEPT_ePyvUSDC_16SEP22),
+            collateral,
+            credit
+        );
+
+        _withdrawAndSell(
+            usdc,
+            curveConvergentPool_ePyvUSDC_16SEP22,
+            pToken_ePyvUSDC_16SEP22,
+            address(vaultEPT_ePyvUSDC_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvUSDC_redeem() public {
+        deploy();
+
+        uint256 collateral = 500_000e6;
+        uint256 credit = 250_000e18;
+        _mintUSDC(address(this), collateral);
+
+        _buyAndDeposit(
+            usdc,
+            curveConvergentPool_ePyvUSDC_16SEP22,
+            pToken_ePyvUSDC_16SEP22,
+            address(vaultEPT_ePyvUSDC_16SEP22),
+            collateral,
+            credit
+        );
+
+        _withdrawAndRedeem(
+            usdc,
+            pToken_ePyvUSDC_16SEP22,
+            address(vaultEPT_ePyvUSDC_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvUSDC_liquidate() public {
+        deploy();
+
+        uint256 collateral = 500_000e6;
+        uint256 credit = 250_000e18;
+        _mintUSDC(address(this), collateral);
+
+        _buyAndDeposit(
+            usdc,
+            curveConvergentPool_ePyvUSDC_16SEP22,
+            pToken_ePyvUSDC_16SEP22,
+            address(vaultEPT_ePyvUSDC_16SEP22),
+            collateral,
+            credit
+        );
+
+        _liquidate(
+            usdc,
+            address(vaultEPT_ePyvUSDC_16SEP22)
+        );
+    }
+
+    function test_ePyvDAI_buy_sell() public {
+        deploy();
+
+        uint256 collateral = 500_000e18;
+        uint256 credit = 250_000e18;
+        _mintDAI(address(this), collateral);
+
+        _buyAndDeposit(
+            dai,
+            curveConvergentPool_ePyvDAI_16SEP22,
+            pToken_ePyvDAI_16SEP22,
+            address(vaultEPT_ePyvDAI_16SEP22),
+            collateral,
+            credit
+        );
+
+        _withdrawAndSell(
+            dai,
+            curveConvergentPool_ePyvDAI_16SEP22,
+            pToken_ePyvDAI_16SEP22,
+            address(vaultEPT_ePyvDAI_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvDAI_redeem() public {
+        deploy();
+
+        uint256 collateral = 500_000e18;
+        uint256 credit = 250_000e18;
+        _mintDAI(address(this), collateral);
+
+        _buyAndDeposit(
+            dai,
+            curveConvergentPool_ePyvDAI_16SEP22,
+            pToken_ePyvDAI_16SEP22,
+            address(vaultEPT_ePyvDAI_16SEP22),
+            collateral,
+            credit
+        );
+
+        _withdrawAndRedeem(
+            dai,
+            pToken_ePyvDAI_16SEP22,
+            address(vaultEPT_ePyvDAI_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvDAI_liquidate() public {
+        deploy();
+
+        uint256 collateral = 500_000e18;
+        uint256 credit = 250_000e18;
+        _mintDAI(address(this), collateral);
+
+        _buyAndDeposit(
+            dai,
+            curveConvergentPool_ePyvDAI_16SEP22,
+            pToken_ePyvDAI_16SEP22,
+            address(vaultEPT_ePyvDAI_16SEP22),
+            collateral,
+            credit
+        );
+
+        _liquidate(
+            dai,
+            address(vaultEPT_ePyvDAI_16SEP22)
+        );
+    }
+
+    function test_ePyvLUSD3CRV_buy_sell() public {
+        deploy();
+
+        uint256 collateral = 100_000e18;
+        uint256 credit = 50_000e18;
+        _mintLUSD3CRV(address(this), collateral * 1.1e18 / 1e18);
+
+        _buyAndDeposit(
+            lusd3CRV,
+            curveConvergentPool_ePyvLUSD3CRV_16SEP22,
+            pToken_ePyvLUSD3CRV_16SEP22,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+            collateral,
+            credit
+        );
+        
+        _withdrawAndSell(
+            lusd3CRV,
+            curveConvergentPool_ePyvLUSD3CRV_16SEP22,
+            pToken_ePyvLUSD3CRV_16SEP22,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvLUSD3CRV_redeem() public {
+        deploy();
+
+        uint256 collateral = 100_000e18;
+        uint256 credit = 50_000e18;
+        _mintLUSD3CRV(address(this), collateral * 1.1e18 / 1e18);
+
+        _buyAndDeposit(
+            lusd3CRV,
+            curveConvergentPool_ePyvLUSD3CRV_16SEP22,
+            pToken_ePyvLUSD3CRV_16SEP22,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+            collateral,
+            credit
+        );
+        
+        _withdrawAndRedeem(
+            lusd3CRV,
+            pToken_ePyvLUSD3CRV_16SEP22,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+            collateral,
+            credit
+        );
+    }
+
+    function test_ePyvLUSD3CRV_liquidate() public {
+        deploy();
+
+        uint256 collateral = 100_000e18;
+        uint256 credit = 50_000e18;
+        _mintLUSD3CRV(address(this), collateral * 1.1e18 / 1e18);
+
+        _buyAndDeposit(
+            lusd3CRV,
+            curveConvergentPool_ePyvLUSD3CRV_16SEP22,
+            pToken_ePyvLUSD3CRV_16SEP22,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22),
+            collateral,
+            credit
+        );
+
+        _liquidate(
+            lusd3CRV,
+            address(vaultEPT_ePyvLUSD3CRV_16SEP22)
+        );
+    }
+}

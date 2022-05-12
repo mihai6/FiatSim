@@ -6,11 +6,13 @@
 const hre = require("hardhat");
 
 console.log("Running simulate.js...");
+const ERC20 = "@openzeppelin/contracts/token/ERC20/ERC20.sol:ERC20";
 
 const daiWhaleAddress = "0x47ac0fb4f2d84898e4d9e7b4dab3c24507a6d503";
 const daiAddress = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 const daiPTAddress = "0xCCE00da653eB50133455D4075fE8BcA36750492c";
 const balancerVaultAddress = "0xba12222222228d8ba445958a75a0704d566bf2c8";
+const vaultEPTActions = "0x0021DCEeb93130059C2BbBa7DacF14fe34aFF23c";
 
 const elementDaiTrancheAddresses = {
   "address": "0xCCE00da653eB50133455D4075fE8BcA36750492c",
@@ -41,17 +43,18 @@ async function main() {
     daiWhaleAddress,
     hre.ethers.utils.parseEther("10.0").toHexString()
   ]);
+  hre.ethers.get
 
-  const daiERC20Whale = await hre.ethers.getContractAt("ERC20", daiAddress, daiWhaleSigner);
+  const daiERC20Whale = await hre.ethers.getContractAt(ERC20, daiAddress, daiWhaleSigner);
 
   const decimals = await daiERC20Whale.decimals()
   const amountAbsolute = hre.ethers.utils.parseUnits("100000", decimals);
   const transaction = await daiERC20Whale.transfer(signer.address, amountAbsolute);
   const balanceOfSigner = await daiERC20Whale.balanceOf(signer.address);
 
-  console.log("confirmed transferred balance: ", balanceOfSigner);
+  console.log("confirmed transferred balance: " + balanceOfSigner/(10**decimals));
 
-  const ccPool =  await hre.ethers.getContractAt("IVault", balancerVaultAddress, signer);
+  const ccPool =  await hre.ethers.getContractAt("contracts/balancer-core-v2/vault/interfaces/IVault.sol:IVault", balancerVaultAddress, signer);
 
   const singleSwap = {
     poolId: elementDaiTrancheAddresses.ptPool.poolId,
@@ -72,13 +75,16 @@ async function main() {
   limit = hre.ethers.utils.parseUnits("100000.0"); // For now don't worry about limit since it is a sim
   deadline = Math.round(Date.now() / 1000) + 100; // 100 seconds expiration
 
-  const ptERC20 = await hre.ethers.getContractAt("ERC20", daiPTAddress, signer);
-  const daiERC20 = await hre.ethers.getContractAt("ERC20", daiAddress, signer);
+  const ptERC20 = await hre.ethers.getContractAt(ERC20, daiPTAddress, signer);
+  const daiERC20 = await hre.ethers.getContractAt(ERC20, daiAddress, signer);
   await daiERC20.approve(balancerVaultAddress, "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
   await ccPool.swap(singleSwap, funds, limit, deadline);
 
   const ptBalance = await ptERC20.balanceOf(signer.address);
-  console.log("PTs Acquired: ", hre.ethers.utils.formatUnits(ptBalance, decimals));
+  console.log("PTs Acquired: ", hre.ethers.utils.formatUnits/(ptBalance, decimals));
+
+  const daiBalance = await daiERC20.balanceOf(signer.address);
+  console.log("DAI Balance: ", hre.ethers.utils.formatUnits/(daiBalance, decimals));
 }
 
 // We recommend this pattern to be able to use async/await everywhere

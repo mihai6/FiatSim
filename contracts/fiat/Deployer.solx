@@ -1,0 +1,362 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.4;
+
+import {Codex} from "fiat/Codex.sol";
+import {Publican} from "fiat/Publican.sol";
+import {Aer} from "fiat/Aer.sol";
+import {Limes} from "fiat/Limes.sol";
+import {Moneta} from "fiat/Moneta.sol";
+import {SurplusAuction} from "fiat/auctions/SurplusAuction.sol";
+import {DebtAuction} from "fiat/auctions/DebtAuction.sol";
+import {NoLossCollateralAuction} from "fiat/auctions/NoLossCollateralAuction.sol";
+import {FIAT} from "fiat/FIAT.sol";
+import {Tenebrae} from "fiat/Tenebrae.sol";
+import {Collybus} from "fiat/Collybus.sol";
+import {Guarded} from "fiat/utils/Guarded.sol";
+
+import {IGuard} from "guards/interfaces/IGuard.sol";
+
+contract CodexFactory {
+    function newCodex(address owner) public returns (Codex codex) {
+        codex = new Codex();
+        codex.allowCaller(codex.ANY_SIG(), owner);
+        codex.blockCaller(codex.ANY_SIG(), address(this));
+    }
+}
+
+contract PublicanFactory {
+    function newPublican(address owner, address codex) public returns (Publican publican) {
+        publican = new Publican(codex);
+        publican.allowCaller(publican.ANY_SIG(), owner);
+        publican.blockCaller(publican.ANY_SIG(), address(this));
+    }
+}
+
+contract AerFactory {
+    function newAer(
+        address owner,
+        address codex,
+        address surplusAuction,
+        address debtAuction
+    ) public returns (Aer aer) {
+        aer = new Aer(codex, surplusAuction, debtAuction);
+        aer.allowCaller(aer.ANY_SIG(), owner);
+        aer.blockCaller(aer.ANY_SIG(), address(this));
+    }
+}
+
+contract LimesFactory {
+    function newLimes(address owner, address codex) public returns (Limes limes) {
+        limes = new Limes(codex);
+        limes.allowCaller(limes.ANY_SIG(), owner);
+        limes.blockCaller(limes.ANY_SIG(), address(this));
+    }
+}
+
+contract FIATFactory {
+    function newFIAT(address owner) public returns (FIAT fiat) {
+        fiat = new FIAT();
+        fiat.allowCaller(fiat.ANY_SIG(), owner);
+        fiat.blockCaller(fiat.ANY_SIG(), address(this));
+    }
+}
+
+contract MonetaFactory {
+    function newMoneta(address owner, address codex, address fiat) public returns (Moneta moneta) {
+        moneta = new Moneta(codex, fiat);
+        moneta.allowCaller(moneta.ANY_SIG(), owner);
+        moneta.blockCaller(moneta.ANY_SIG(), address(this));
+    }
+}
+
+contract SurplusAuctionFactory {
+    function newSurplusAuction(
+        address owner,
+        address codex,
+        address gov
+    ) public returns (SurplusAuction surplusAuction) {
+        surplusAuction = new SurplusAuction(codex, gov);
+        surplusAuction.allowCaller(surplusAuction.ANY_SIG(), owner);
+        surplusAuction.blockCaller(surplusAuction.ANY_SIG(), address(this));
+    }
+}
+
+contract DebtAuctionFactory {
+    function newDebtAuction(
+        address owner,
+        address codex,
+        address gov
+    ) public returns (DebtAuction debtAuction) {
+        debtAuction = new DebtAuction(codex, gov);
+        debtAuction.allowCaller(debtAuction.ANY_SIG(), owner);
+        debtAuction.blockCaller(debtAuction.ANY_SIG(), address(this));
+    }
+}
+
+contract NoLossCollateralAuctionFactory {
+    function newNoLossCollateralAuction(
+        address owner,
+        address codex,
+        address limes
+    ) public returns (NoLossCollateralAuction collateralAuction) {
+        collateralAuction = new NoLossCollateralAuction(codex, limes);
+        collateralAuction.allowCaller(collateralAuction.ANY_SIG(), owner);
+        collateralAuction.blockCaller(collateralAuction.ANY_SIG(), address(this));
+    }
+}
+
+contract CollybusFactory {
+    function newCollybus(address owner) public returns (Collybus collybus) {
+        collybus = new Collybus();
+        collybus.allowCaller(collybus.ANY_SIG(), owner);
+        collybus.blockCaller(collybus.ANY_SIG(), address(this));
+    }
+}
+
+contract TenebraeFactory {
+    function newTenebrae(address owner) public returns (Tenebrae tenebrae) {
+        tenebrae = new Tenebrae();
+        tenebrae.allowCaller(tenebrae.ANY_SIG(), owner);
+        tenebrae.blockCaller(tenebrae.ANY_SIG(), address(this));
+    }
+}
+
+/// @title Deployer
+/// @notice Stateful contract managing the deployment of the protocol
+contract Deployer is Guarded {
+    /// ======== Custom Errors ======== ///
+
+    error Deployer__checkStep_missingPreviousStep();
+    error Deployer__deployAuctions_zeroGovToken();
+    error Deployer__setGuard_notGuard();
+
+    /// ======== Storage ======== ///
+
+    CodexFactory public codexFactory;
+    PublicanFactory public publicanFactory;
+    AerFactory public aerFactory;
+    LimesFactory public limesFactory;
+    FIATFactory public fiatFactory;
+    MonetaFactory public monetaFactory;
+    SurplusAuctionFactory public surplusAuctionFactory;
+    DebtAuctionFactory public debtAuctionFactory;
+    NoLossCollateralAuctionFactory public collateralAuctionFactory;
+    CollybusFactory public collybusFactory;
+    TenebraeFactory public tenebraeFactory;
+
+    Codex public codex;
+    Publican public publican;
+    Aer public aer;
+    Limes public limes;
+    FIAT public fiat;
+    Moneta public moneta;
+    NoLossCollateralAuction public collateralAuction;
+    SurplusAuction public surplusAuction;
+    DebtAuction public debtAuction;
+    Collybus public collybus;
+    Tenebrae public tenebrae;
+
+    uint256 public step;
+
+    modifier checkStep(uint256 prevStep) {
+        uint256 _step = step;
+        if (_step != prevStep) revert Deployer__checkStep_missingPreviousStep();
+        _;
+        step++;
+    }
+
+    /// ======== Deploy ======== ///
+
+    function setFactory(
+        CodexFactory codexFactory_,
+        PublicanFactory publicanFactory_,
+        AerFactory aerFactory_,
+        LimesFactory limesFactory_,
+        FIATFactory fiatFactory_,
+        MonetaFactory monetaFactory_,
+        SurplusAuctionFactory surplusAuctionFactory_,
+        DebtAuctionFactory debtAuctionFactory_,
+        NoLossCollateralAuctionFactory collateralAuctionFactory_,
+        CollybusFactory collybusFactory_,
+        TenebraeFactory tenebraeFactory_
+    ) public checkCaller checkStep(0) {
+        codexFactory = codexFactory_;
+        publicanFactory = publicanFactory_;
+        aerFactory = aerFactory_;
+        limesFactory = limesFactory_;
+        fiatFactory = fiatFactory_;
+        monetaFactory = monetaFactory_;
+        surplusAuctionFactory = surplusAuctionFactory_;
+        debtAuctionFactory = debtAuctionFactory_;
+        collateralAuctionFactory = collateralAuctionFactory_;
+        collybusFactory = collybusFactory_;
+        tenebraeFactory = tenebraeFactory_;
+    }
+
+    function deployCodex() public checkCaller checkStep(1) {
+        codex = codexFactory.newCodex(address(this));
+        collybus = collybusFactory.newCollybus(address(this));
+    }
+
+    function deployFIAT() public checkCaller checkStep(2) {
+        fiat = fiatFactory.newFIAT(address(this));
+        moneta = monetaFactory.newMoneta(address(this), address(codex), address(fiat));
+
+        // contract permissions
+        fiat.allowCaller(fiat.mint.selector, address(moneta));
+    }
+
+    function deployPublican() public checkCaller checkStep(3) {
+        publican = publicanFactory.newPublican(address(this), address(codex));
+
+        // contract permissions
+        codex.allowCaller(codex.modifyRate.selector, address(publican));
+    }
+
+    function deployAuctions(address govToken) public checkCaller checkStep(4) {
+        if (govToken == address(0)) revert Deployer__deployAuctions_zeroGovToken();
+
+        surplusAuction = surplusAuctionFactory.newSurplusAuction(address(this), address(codex), govToken);
+        debtAuction = debtAuctionFactory.newDebtAuction(address(this), address(codex), govToken);
+        aer = aerFactory.newAer(address(this), address(codex), address(surplusAuction), address(debtAuction));
+
+        // contract references
+        publican.setParam("aer", address(aer));
+
+        // contract permissions
+        codex.allowCaller(codex.createUnbackedDebt.selector, address(debtAuction));
+        surplusAuction.allowCaller(surplusAuction.startAuction.selector, address(aer));
+        surplusAuction.allowCaller(surplusAuction.lock.selector, address(aer));
+        debtAuction.allowCaller(debtAuction.startAuction.selector, address(aer));
+        debtAuction.allowCaller(debtAuction.lock.selector, address(aer));
+    }
+
+    function deployLimes() public checkCaller checkStep(5) {
+        limes = limesFactory.newLimes(address(this), address(codex));
+
+        // contract references
+        limes.setParam("aer", address(aer));
+
+        // contract permissions
+        codex.allowCaller(codex.confiscateCollateralAndDebt.selector, address(limes));
+        aer.allowCaller(aer.queueDebt.selector, address(limes));
+    }
+
+    function deployTenebrae() public checkCaller checkStep(6) {
+        tenebrae = tenebraeFactory.newTenebrae(address(this));
+
+        // contract references
+        tenebrae.setParam("codex", address(codex));
+        tenebrae.setParam("limes", address(limes));
+        tenebrae.setParam("aer", address(aer));
+        tenebrae.setParam("collybus", address(collybus));
+
+        // contract permissions
+        codex.allowCaller(codex.lock.selector, address(tenebrae));
+        limes.allowCaller(limes.ANY_SIG(), address(tenebrae));
+        aer.allowCaller(aer.ANY_SIG(), address(tenebrae));
+        collybus.allowCaller(collybus.ANY_SIG(), address(tenebrae));
+    }
+
+    function deployCollateralAuction() public checkCaller checkStep(7) {
+        collateralAuction = collateralAuctionFactory.newNoLossCollateralAuction(
+            address(this),
+            address(codex),
+            address(limes)
+        );
+
+        // contract references
+        collateralAuction.setParam("aer", address(aer));
+        collateralAuction.setParam("limes", address(limes));
+
+        // contract permissions
+        codex.allowCaller(codex.transferCredit.selector, address(moneta));
+        codex.allowCaller(codex.createUnbackedDebt.selector, address(collateralAuction));
+        collateralAuction.allowCaller(collateralAuction.startAuction.selector, address(limes));
+        collateralAuction.allowCaller(collateralAuction.cancelAuction.selector, address(tenebrae));
+        limes.allowCaller(limes.liquidated.selector, address(collateralAuction));
+    }
+
+    /// ======== Setup Parameters ======== ///
+
+    function setDao(address dao) public checkCaller checkStep(8) {
+        _setCaller(dao);
+    }
+
+    function setGuardian(address guardian) public checkCaller checkStep(9) {
+        _setCaller(guardian);
+    }
+
+    function setAerGuard(address guard) public checkCaller checkStep(10) {
+        _setGuard(guard);
+    }
+
+    function setAuctionGuard(address guard) public checkCaller checkStep(11) {
+        _setGuard(guard);
+    }
+
+    function setCodexGuard(address guard, uint256 globalDebtCeiling) public checkCaller checkStep(12) {
+        _setGuard(guard);
+        codex.setParam("globalDebtCeiling", globalDebtCeiling);
+    }
+
+    function setCollybusGuard(
+        address guard, 
+        address[] memory discountRateRelayerList, 
+        address[] memory spotRelayerList
+    ) public checkCaller checkStep(13) {
+        _setGuard(guard);
+        for (uint256 i = 0; i < discountRateRelayerList.length; ++i) {
+            collybus.allowCaller(Collybus.updateDiscountRate.selector, discountRateRelayerList[i]);
+        }
+        for (uint256 i = 0; i < spotRelayerList.length; ++i) {
+            collybus.allowCaller(Collybus.updateSpot.selector, spotRelayerList[i]);
+        }
+    }
+
+    function setLimesGuard(address guard, uint256 globalMaxDebtOnAuction) public checkCaller checkStep(14) {
+        _setGuard(guard);
+        limes.setParam("globalMaxDebtOnAuction", globalMaxDebtOnAuction);
+    }
+
+    function setPublicanGuard(address guard) public checkCaller checkStep(15) {
+        _setGuard(guard);
+    }
+
+    function setVaultGuard(address guard) public checkCaller checkStep(16) {
+        _setGuard(guard);
+    }
+
+    function renounce() public checkCaller checkStep(17) {
+        aer.blockCaller(aer.ANY_SIG(), address(this));
+        codex.blockCaller(codex.ANY_SIG(), address(this));
+        collateralAuction.blockCaller(collateralAuction.ANY_SIG(), address(this));
+        collybus.blockCaller(collybus.ANY_SIG(), address(this));
+        debtAuction.blockCaller(debtAuction.ANY_SIG(), address(this));
+        fiat.blockCaller(fiat.ANY_SIG(), address(this));
+        limes.blockCaller(limes.ANY_SIG(), address(this));
+        moneta.blockCaller(moneta.ANY_SIG(), address(this));
+        publican.blockCaller(publican.ANY_SIG(), address(this));
+        surplusAuction.blockCaller(surplusAuction.ANY_SIG(), address(this));
+        tenebrae.blockCaller(tenebrae.ANY_SIG(), address(this));
+    }
+
+    function _setGuard(address guard) internal {
+        _setCaller(guard);
+        if (!IGuard(guard).isGuard()) revert Deployer__setGuard_notGuard();
+    }
+
+    function _setCaller(address caller) internal {
+        aer.allowCaller(aer.ANY_SIG(), caller);
+        codex.allowCaller(codex.ANY_SIG(), caller);
+        collateralAuction.allowCaller(collateralAuction.ANY_SIG(), caller);
+        collybus.allowCaller(collybus.ANY_SIG(), caller);
+        debtAuction.allowCaller(debtAuction.ANY_SIG(), caller);
+        fiat.allowCaller(fiat.ANY_SIG(), caller);
+        limes.allowCaller(limes.ANY_SIG(), caller);
+        moneta.allowCaller(moneta.ANY_SIG(), caller);
+        publican.allowCaller(publican.ANY_SIG(), caller);
+        surplusAuction.allowCaller(surplusAuction.ANY_SIG(), caller);
+        tenebrae.allowCaller(tenebrae.ANY_SIG(), caller);
+    }
+}

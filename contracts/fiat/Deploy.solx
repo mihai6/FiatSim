@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.4;
+
+import {DSTest} from "ds-test/test.sol";
+
+import {Hevm} from "./utils/Hevm.sol";
+
+import "../Dependencies.sol";
+import "../Deployer.sol";
+
+abstract contract TestDeploy is DSTest {
+
+    Hevm internal hevm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
+    // Params
+
+    address public dao = address(this);
+    // address public dao = address(0xa55E0d3d697C4692e9C37bC3a7062b1bECeEF45B);
+    address public guardian = address(this);
+    // address public guardian = address(0x245bD99C7379df6740332d06530DA7Dedb062D61);
+
+    FDT public fdt = FDT(0xEd1480d12bE41d92F36f5f7bDd88212E381A3677);
+    
+    uint256 public delay = 259200;
+    uint256 public globalDebtCeiling = 50000000e18;
+    uint256 public maxGlobalDebtOnAuction = 1000000e18;
+
+    // Contracts
+
+    Deployer public deployer;
+
+    PriceCalculatorFactory public priceCalculatorFactory;
+
+    Aer public aer;
+    Codex public codex;
+    NoLossCollateralAuction public collateralAuction;
+    Collybus public collybus;
+    DebtAuction public debtAuction;
+    FIAT public fiat;
+    Limes public limes;
+    Moneta public moneta;
+    Publican public publican;
+    SurplusAuction public surplusAuction;
+    Tenebrae public tenebrae;
+
+    address[] public discountRateRelayers;
+    address[] public spotRelayers;
+
+    AerGuard public aerGuard;
+    AuctionGuard public auctionGuard;
+    CodexGuard public codexGuard;
+    CollybusGuard public collybusGuard;
+    LimesGuard public limesGuard;
+    PublicanGuard public publicanGuard;
+    VaultGuard public vaultGuard;
+
+    function deployDeployer() public {
+        deployer = new Deployer();
+
+        priceCalculatorFactory = new PriceCalculatorFactory();
+
+        deployer.setFactory(
+            new CodexFactory(),
+            new PublicanFactory(),
+            new AerFactory(),
+            new LimesFactory(),
+            new FIATFactory(),
+            new MonetaFactory(),
+            new SurplusAuctionFactory(),
+            new DebtAuctionFactory(),
+            new NoLossCollateralAuctionFactory(),
+            new CollybusFactory(),
+            new TenebraeFactory()
+        );
+
+        deployer.deployCodex();
+        deployer.deployFIAT();
+        deployer.deployPublican();
+        deployer.deployAuctions(address(fdt));
+        deployer.deployLimes();
+        deployer.deployTenebrae();
+        deployer.deployCollateralAuction();
+
+        deployer.setDao(dao);
+        deployer.setGuardian(guardian);
+        
+        aer = deployer.aer();
+        collybus = deployer.collybus();
+        codex = deployer.codex();
+        fiat = deployer.fiat();
+        publican = deployer.publican();
+        moneta = deployer.moneta();
+        surplusAuction = deployer.surplusAuction();
+        debtAuction = deployer.debtAuction();
+        limes = deployer.limes();
+        tenebrae = deployer.tenebrae();
+        collateralAuction = deployer.collateralAuction();
+    }
+
+    function deployGuards() public {
+        aerGuard = new AerGuard(dao, guardian, delay, address(aer));
+        auctionGuard = new AuctionGuard(dao, guardian, delay, address(collateralAuction));
+        codexGuard = new CodexGuard(dao, guardian, delay, address(codex));
+        collybusGuard = new CollybusGuard(dao, guardian, delay, address(collybus));
+        limesGuard = new LimesGuard(dao, guardian, delay, address(limes));
+        publicanGuard = new PublicanGuard(dao, guardian, delay, address(publican));
+        vaultGuard = new VaultGuard(
+            dao,
+            guardian,
+            delay,
+            address(codex),
+            address(publican),
+            address(limes),
+            address(collybus),
+            address(collateralAuction),
+            address(priceCalculatorFactory)
+        );
+
+        deployer.setAerGuard(address(aerGuard));
+        deployer.setAuctionGuard(address(auctionGuard));
+        deployer.setCodexGuard(address(codexGuard), globalDebtCeiling);
+        deployer.setCollybusGuard(address(collybusGuard), discountRateRelayers, spotRelayers);
+        deployer.setLimesGuard(address(limesGuard), maxGlobalDebtOnAuction);
+        deployer.setPublicanGuard(address(publicanGuard));
+        deployer.setVaultGuard(address(vaultGuard));
+
+        deployer.renounce();
+    }
+}
