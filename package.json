@@ -9,14 +9,14 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@openzeppelin/contracts" : "latest",
-    "@prb/math" : "latest",
     "@nomiclabs/hardhat-ethers": "^2.0.5",
     "@nomiclabs/hardhat-waffle": "^2.0.3",
+    "@openzeppelin/contracts": "latest",
+    "@prb/math": "latest",
     "chai": "^4.3.6",
     "ethereum-waffle": "^3.4.4",
     "ethers": "^5.6.5",
-    "hardhat": "^2.9.3"
+    "hardhat": "^2.9.4"
   },
   "dependencies": {
     "dotenv": "^16.0.0"
