@@ -29,6 +29,13 @@ const elementDaiTrancheAddresses = {
 };
 
 async function main() {
+  async function showBalance(address,text) {
+    ptBalance = await ptERC20.balanceOf(address);
+    console.log("PTs " + text + ": ", hre.ethers.utils.formatUnits(ptBalance, decimals));
+  
+    daiBalance = await daiERC20.balanceOf(address);
+    console.log("DAI " + text + ": ", hre.ethers.utils.formatUnits(daiBalance, decimals));
+  }
   const signer = (await hre.ethers.getSigners())[0];
 
   await hre.network.provider.request({
@@ -79,19 +86,9 @@ async function main() {
   const daiERC20 = await hre.ethers.getContractAt(ERC20, daiAddress, signer);
   await daiERC20.approve(balancerVaultAddress, "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 
-  var ptBalance = await ptERC20.balanceOf(signer.address);
-  console.log("PTs Before: ", hre.ethers.utils.formatUnits(ptBalance, decimals));
-
-  var daiBalance = await daiERC20.balanceOf(signer.address);
-  console.log("DAI Before: ", hre.ethers.utils.formatUnits(daiBalance, decimals));
-
+  await showBalance(signer.address,"Before");
   await ccPool.swap(singleSwap, funds, limit, deadline);
-
-  ptBalance = await ptERC20.balanceOf(signer.address);
-  console.log("PTs After: ", hre.ethers.utils.formatUnits(ptBalance, decimals));
-
-  daiBalance = await daiERC20.balanceOf(signer.address);
-  console.log("DAI After: ", hre.ethers.utils.formatUnits(daiBalance, decimals));
+  await showBalance(signer.address,"After");
 }
 
 // We recommend this pattern to be able to use async/await everywhere
